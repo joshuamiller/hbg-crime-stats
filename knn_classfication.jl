@@ -12,10 +12,14 @@ min_lat = minimum(removeNA(reports["Lat"]))
 max_lon = maximum(removeNA(reports["Lon"]))
 min_lon = minimum(removeNA(reports["Lon"]))
 
+# Using very different units between lat/lon and time;
+# standardize on a 0-1 range
 function standardize(x, max, min)
     (x - min) / (max - min)
 end
 
+# Seems like I should be able to do this in the transform itself,
+# but it doesn't seem to work for functions with multiple args
 function standardize_all(m, max, min)
     map(x -> standardize(x, max, min), m)
 end
@@ -44,6 +48,7 @@ std_day = standardize_day(now)
 
 @transform(reports, StandardDay => map(standardize_days, End))
 
+# Want to generalize this in terms of two vectors
 function eucl_dist(lat1, lon1, min1, day1, lat2, lon2, min2, day2)
     (lat2 - lat1)^2 +
     (lon2 - lon2)^2 +
@@ -51,8 +56,14 @@ function eucl_dist(lat1, lon1, min1, day1, lat2, lon2, min2, day2)
     (day2 - day1)^2
 end
 
-reports["Distances"] = [eucl_dist(std_lat, std_lon, std_min, std_day, lat, lon, min, day) for (lat,lon,min,day)=zip(reports["StandardLat"], reports["StandardLon"], reports["StandardMin"], reports["StandardDay"])]
-
-sorted = sortby(reports, "Distances")
-
-by(sorted[1:7, ["Description"]], "Description", nrow)["Description"][:1]
+# Current location and time, k neighbors to use to choose
+function nearest(lat, lon, time, k)
+    std_lat = standardize(lat, max_lat, min_lat)
+    std_lon = standardize(lon, max_lon, min_lon)
+    std_min = standardize_minutes(string(time))
+    std_day = standardize_day(string(time))
+    reports["Distances"] = [eucl_dist(std_lat, std_lon, std_min, std_day, lat, lon, min, day) for (lat,lon,min,day)=zip(reports["StandardLat"], reports["StandardLon"], reports["StandardMin"], reports["StandardDay"])]
+    sorted = sortby(reports, "Distances")
+    by(sorted[1:k, ["Description"]], "Description", nrow)["Description"][:1]
+end
+    
