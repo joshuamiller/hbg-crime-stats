@@ -1,4 +1,6 @@
 using DataFrames
+require("Datetime")
+using Datetime
 
 reports = readtable("reports.csv")
 
@@ -14,39 +16,40 @@ min_lon = minimum(removeNA(reports["Lon"]))
 
 # Using very different units between lat/lon and time;
 # standardize on a 0-1 range
-function standardize(x, max, min)
+function standardize(x::Float64, max, min)
     (x - min) / (max - min)
 end
 
-# Seems like I should be able to do this in the transform itself,
-# but it doesn't seem to work for functions with multiple args
-function standardize_all(m, max, min)
-    map(x -> standardize(x, max, min), m)
+function standardize(m::DataArray{Float64,1}, max, min)
+    (m .- min) ./ (max - min)
 end
 
-@transform(reports, StandardLat => standardize_all(Lat, max_lat, min_lat))
-@transform(reports, StandardLon => standardize_all(Lon, max_lon, min_lon))
+@transform(reports, StandardLat => standardize(Lat, max_lat, min_lat))
+@transform(reports, StandardLon => standardize(Lon, max_lon, min_lon))
 
-formatter = "yyyy-MM-ddTHH:mm:ss"
-now = string(Datetime.now())
 
-function standardize_minutes(str)
-    datetime = Datetime.datetime(formatter, str)
-    total_min = (Datetime.hour(datetime) * 60) + Datetime.minutes(datetime)
+# Make the End column a date
+function parsedate(string::String)
+    Datetime.datetime("yyyy-MM-ddTHH:mm:ss", string)
+end
+@vectorize_1arg String parsedate
+@transform(reports, End => parsedate(End))
+
+# Standardized minutes on a 0.0-1.0 scale, time from noon
+function standardize_minutes(d::DateTime)
+    total_min = (Datetime.hour(d) * 60) + Datetime.minutes(d)
     dist_to_noon = abs(720 - total_min)
     dist_to_noon / 720
 end
+@vectorize_1arg Any standardize_minutes
+@transform(reports, StandardMin => standardize_minutes(End))
 
-std_min = standardize_minutes(now)
-@transform(reports, StandardMin => map(standardize_minutes, End))
-
-function standardize_day(str)
-    datetime = Datetime.datetime(formatter, str)
-    (Datetime.dayofweek(datetime) - 1) / 6
+# Standardize day of week on a 0.0-1.0 scale
+function standardize_day(d::DateTime)
+    (Datetime.dayofweek(d) - 1) / 6
 end
-std_day = standardize_day(now)
-
-@transform(reports, StandardDay => map(standardize_days, End))
+@vectorize_1arg Any standardize_day
+@transform(reports, StandardDay => standardize_day(End))
 
 # Want to generalize this in terms of two vectors
 function eucl_dist(lat1, lon1, min1, day1, lat2, lon2, min2, day2)
@@ -60,10 +63,11 @@ end
 function nearest(lat, lon, time, k)
     std_lat = standardize(lat, max_lat, min_lat)
     std_lon = standardize(lon, max_lon, min_lon)
-    std_min = standardize_minutes(string(time))
-    std_day = standardize_day(string(time))
+    std_min = standardize_minutes(time)
+    std_day = standardize_day(time)
     reports["Distances"] = [eucl_dist(std_lat, std_lon, std_min, std_day, lat, lon, min, day) for (lat,lon,min,day)=zip(reports["StandardLat"], reports["StandardLon"], reports["StandardMin"], reports["StandardDay"])]
     sorted = sortby(reports, "Distances")
     by(sorted[1:k, ["Description"]], "Description", nrow)["Description"][:1]
 end
-    
+     
+println(nearest(40.2821445, -76.8804254, Datetime.now(), 7))
