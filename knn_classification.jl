@@ -50,7 +50,7 @@ function standardize_day(d::DateTime)
 end
 @vectorize_1arg Any standardize_day
 @transform(reports, StandardDay => standardize_day(End))
-
+ 
 # Want to generalize this in terms of two vectors
 function eucl_dist(lat1, lon1, min1, day1, lat2, lon2, min2, day2)
     (lat2 - lat1)^2 +
@@ -67,7 +67,7 @@ function nearest(lat, lon, time, k)
     std_day = standardize_day(time)
     reports["Distances"] = [eucl_dist(std_lat, std_lon, std_min, std_day, lat, lon, min, day) for (lat,lon,min,day)=zip(reports["StandardLat"], reports["StandardLon"], reports["StandardMin"], reports["StandardDay"])]
     sorted = sortby(reports, "Distances")
-    by(sorted[1:k, ["Description"]], "Description", nrow)["Description"][:1]
+    last(sortby(by(sorted[1:k, ["Description"]], "Description", nrow), "x1")[:1])
 end
      
 println(nearest(40.2821445, -76.8804254, Datetime.now(), 7))
